@@ -1,0 +1,9 @@
+[Version:1]
+TextContent 
+{
+	ZilchScriptBuilder 
+	{
+		var Name = "ParticleCleanup"
+		var ResourceId = 0x5cf2efc83517c7d5
+	}
+}

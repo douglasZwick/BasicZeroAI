@@ -1,0 +1,29 @@
+// super simple component for destroying an object when it collides with something
+class DestroySelfOnCollide : ZilchComponent
+{
+  function Initialize(init : CogInitializer)
+  {
+    // Event Connections -----
+    Zero.Connect(this.Owner, Events.CollisionStarted, this.OnCollisionStarted); // when should this be destroyed?
+  }
+  
+  
+  function OnCollisionStarted(event : CollisionEvent)
+  {
+    // Well
+    // 
+    // 
+    // 
+    // 
+    // 
+    // 
+    // 
+    // bye
+    this.Owner.Destroy();
+    
+    // note that this component depends on the PhysicsSpace's CollisionTable
+    // to filter out any collisions that should NOT cause this thing to be
+    // destroyed. other approaches could check for a "tag" component before
+    // destroying, or could check for a Faction or a Team, etc.
+  }
+}

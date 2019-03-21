@@ -1,0 +1,18 @@
+// super simple component that destroys an object after a delay after its creation
+class DestroySelfOnTimer : ZilchComponent
+{
+  [Property]
+  // How long should this thing wait before destroying itself?
+  var Duration : Real = 1;
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // action sequences rule! this saves us from an
+    // unnecessary event connection
+    var seq = Action.Sequence(this.Owner.Actions);
+      
+      Action.Delay(seq, this.Duration);
+      Action.Call(seq, this.Owner.Destroy);
+  }
+}

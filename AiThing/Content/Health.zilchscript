@@ -1,0 +1,89 @@
+// simple event-driven Health system
+class Health : ZilchComponent
+{
+  // dispatch this to something to attempt to deal damage to it
+  sends DamageRequest : HealthEvent;
+  // dispatch this to yourself when you have suffered damage
+  sends WasDamaged : HealthEvent;
+  // dispatch this to yourself when you run out of HP
+  sends Death : HealthEvent;
+  
+  
+  [Property]
+  // How many HP should I have at max?
+  var MaxHP : Integer = 10;
+  var HP : Integer; // current HP
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // you start with full HP
+    this.HP = this.MaxHP;
+    
+    // Event Connections -----
+    Zero.Connect(this.Owner, Events.DamageRequest, this.OnDamageRequest); // needed to be able to take damage
+  }
+  
+  
+  function OnDamageRequest(event : HealthEvent)
+  {
+    // a more robust Health system would probably have some kind of
+    // invulnerability system, say for making the hero immune to
+    // damage for a few moments after being hurt. in such a case,
+    // the damage request would be DENIED!! and no WasDamaged event
+    // would be sent. another thing i often like to do is to use a
+    // DidDealDamage event (or something similarly named), which
+    // gets dispatched to the source of the damage, i.e. the bullet
+    // that hit me, or the maybe the instigator of the attack. these
+    // can be very useful for analytics, as well as for metrics
+    // tracking for achievements
+    
+    // deduct the damage from the HP
+    this.HP -= event.Damage;
+    // the fraction of your MaxHP is calculated and set on the event
+    event.RemainingFraction = this.HP as Real / this.MaxHP;
+    
+    // now that we've taken damage, we dispatch WasDamaged to ourself.
+    // this is great for feedback, as other components can be written
+    // to respond to this event, and they can be attached to the same
+    // object as this one, and they can do their thing and we don't
+    // have to muddy up the Health component itself!
+    this.Owner.DispatchEvent(Events.WasDamaged, event);
+    
+    // if we're out of HP, we're dead
+    if (this.HP <= 0)
+      this.Die(event);
+  }
+  
+  
+  function Die(event : HealthEvent)
+  {
+    // first, we dispatch out the event that we've bought the farm
+    this.Owner.DispatchEvent(Events.Death, event);
+    
+    // at this point, anything that wants to respond to that event
+    // has had its chance. this could include anything that wants
+    // to, say, do something with our now lifeless corpse (say, by
+    // animating its color or what have you). such a component
+    // should set event.Handled to true, because if it ain't handled...
+    if (!event.Handled)
+      // ...then this object is going bye-bye
+      this.Owner.Destroy();
+    
+    // the idea is that, by default, you get destroyed when you die,
+    // but you can delay that (or maybe even prevent it altogether!)
+    // if you want to by handling the event (with care, of course)
+  }
+}
+
+
+// Standard event data to accompany all health-related event dispatching
+class HealthEvent : ZilchEvent
+{
+  // How much damage is being dealt?
+  var Damage : Integer;
+  // The new remaining fraction of HP / MaxHP
+  var RemainingFraction : Real;
+  // In the case of a Death event, was this event taken care of?
+  var Handled : Boolean = false;
+}

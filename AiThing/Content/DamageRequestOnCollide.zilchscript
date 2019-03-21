@@ -1,0 +1,32 @@
+// super simple component for dealing damage by colliding
+class DamageRequestOnCollide : ZilchComponent
+{
+  [Property]
+  // How much damage should this deal?
+  var Damage : Integer = 1;
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // Event Connections -----
+    Zero.Connect(this.Owner, Events.CollisionStarted, this.OnCollisionStarted); // needed to deal damage
+  }
+  
+  
+  function OnCollisionStarted(event : CollisionEvent)
+  {
+    // just make the event
+    var he = HealthEvent();
+    // set the damage amount
+    he.Damage = this.Damage;
+    // and dispatch it to the thing we hit
+    event.OtherObject.DispatchEvent(Events.DamageRequest, he);
+    
+    // POTENTIAL IMPROVEMENT:
+    //   it can be useful to abstract out some kind of DamageSource component,
+    //   which is shared by all the different components that can deal damage.
+    //   it contains all the code necessary for calculating the damage to deal
+    //   and preparing the HealthEvent to send out, and components such as this
+    //   one should have a [Dependency] on it
+  }
+}

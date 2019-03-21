@@ -1,0 +1,9 @@
+[Version:1]
+TextContent 
+{
+	ZilchScriptBuilder 
+	{
+		var Name = "DestroySelfOnTimer"
+		var ResourceId = 0x5cf2e58402f619e1
+	}
+}

@@ -1,0 +1,36 @@
+// used primarily for damage particles, but can be used for feedback, etc., in general
+class SpawnOnWasDamaged : ZilchComponent
+{
+  [Dependency]
+  var Transform : Transform;  // needed to know where to put the thing
+  [Dependency]
+  var Health : Health;        // not actually needed, but you won't get a WasDamaged event otherwise!
+  
+  
+  [Property]
+  // The archetype to spawn when damage is received
+  var ArchetypeToSpawn : Archetype = Archetype.DamageParticles;
+  [Property]
+  // Where, in local space, should this thing be made?
+  var LocalOffset : Real3 = Real3.Zero;
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // Event Connections -----
+    Zero.Connect(this.Owner, Events.WasDamaged, this.OnWasDamaged); // needed to know when to spawn the thing
+  }
+  
+  
+  function OnWasDamaged(event : HealthEvent)
+  {
+    // we got hit, so we spawn the archetype
+    var position = this.Transform.TransformPoint(this.LocalOffset);
+    this.Space.CreateAtPosition(this.ArchetypeToSpawn, position);
+    
+    // POTENTIAL IMPROVEMENT:
+    //   the HealthEvent class could be expanded to include a WorldPosition
+    //   of where the damage actually occurred; this might be a nicer place
+    //   to spawn this object
+  }
+}

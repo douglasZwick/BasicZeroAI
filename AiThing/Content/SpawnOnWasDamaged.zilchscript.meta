@@ -1,0 +1,9 @@
+[Version:1]
+TextContent 
+{
+	ZilchScriptBuilder 
+	{
+		var Name = "SpawnOnWasDamaged"
+		var ResourceId = 0x5cf2f07f1fb3294f
+	}
+}

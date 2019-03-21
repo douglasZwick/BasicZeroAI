@@ -1,0 +1,476 @@
+// Interfaces with the CharacterController to make enemies move around and attack
+class AiInput : ZilchComponent
+{
+  [Dependency]
+  var Transform : Transform;                      // needed for ray casts / distance checks
+  [Dependency]
+  var Orientation : Orientation;                  // needed for turning and facing
+  [Dependency]
+  var CharacterController : CharacterController;  // needed for movement and attacking
+  
+  
+  [Property]
+  // How close should I get to each waypoint before I move on to the next one?
+  var WaypointDistanceThreshold : Real = 1;
+  
+  [Property]
+  // How close should I get to my target before I switch to the Attack state?
+  var TargetThresholdDistanceToAttack : Real = 5;
+  
+  [Property]
+  // How far should I get from my target before I switch to the Patrol state?
+  var TargetThresholdDistanceFromAttack : Real = 5.5;
+  
+  [Property]
+  // CogPath to the parent of the patrol path waypoint nodes
+  var PatrolPath : CogPath;
+  
+  [Property]
+  // How long should I wait between attacks?
+  var AttackDelayBase : Real = 0.5;
+  
+  [Property]
+  // Amount of random variance applied to the AttackDelay calculation
+  var AttackDelayVariance : Real = 0.25;
+  
+  [Property]
+  // How fast (degrees/sec) can I turn toward my next waypoint?
+  var TurnSpeed : Real = 360;
+  
+  var AttackDelay : Real; // how long to wait between attacks, calculated after each attack
+  var AttackTimer : Real; // counts up to the AttackDelay after each attack
+  
+  var State : AiState = AiState.Patrol; // which AI state I'm currently in
+  
+  var Waypoints : Array[Real3] = Array[Real3]();  // array of the positions of each waypoint node
+  var WaypointIndex : Integer = 0;                // which waypoint is next
+  var Target : Cog;                               // the current target (the Hero)
+  var TargetAcquisitionCheckDelay : Real = 1;     // how long to wait between target acquisition checks (rarely relevant)
+  var TargetAcquisitionTimer : Real;              // counts up to the TargetAcquisitionCheckDelay after each unsuccessful check
+  var RNG : Random = Random();                    // generates random numbers
+  
+  var CastFilter : CastFilter;  // filter used for ray casts
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // this timer is initially set equal to the TargetAcquisitionCheckDelay so that
+    // a target can be found on the very first update
+    this.TargetAcquisitionTimer = this.TargetAcquisitionCheckDelay;
+    // prepare for the first attack cooldown
+    this.ResetAttackTimer();
+    
+    // prepare the cast filter for ray casts
+    this.CastFilter = CastFilter();
+    this.CastFilter.IgnoreCog = this.Owner; // we just gotta make sure we don't somehow hit ourselves!
+    
+    // loop through the children of the patrol path parent node
+    // and store each of their positions in the Waypoints array
+    foreach (var child in this.PatrolPath.Cog.Children)
+      this.Waypoints.Add(child.Transform.WorldTranslation);
+    
+    // Event Connections -----
+    Zero.Connect(this.Space, Events.LogicUpdate, this.OnLogicUpdate); // needed for updating behavior
+    Zero.Connect(this.Owner, Events.WasDamaged, this.OnWasDamaged);   // needed for printing stuff when being damaged
+    Zero.Connect(this.Owner, Events.Death, this.OnDeath);             // needed for printing stuff when dying
+  }
+  
+  
+  function OnDeath(event : HealthEvent)
+  {
+    // we hardly knew ya
+    Console.WriteLine("Uncle!!!");
+  }
+  
+  
+  function OnWasDamaged(event : HealthEvent)
+  {
+    // we don't want to do both this and the death cry
+    if (event.RemainingFraction <= 0)
+      return;
+    
+    // two different cries, depending on how much health is left. note
+    // that this threshold could of course be made into a property, but
+    // it's such an unimportant detail that i guess i just didn't feel
+    // like cluttering up the property interface any more than it already is
+    if (event.RemainingFraction > 0.5)
+      Console.WriteLine("Ouch!");
+    else
+      Console.WriteLine("Aaack!!");
+  }
+  
+  
+  function OnLogicUpdate(event : UpdateEvent)
+  {
+    // it's very common for Update functions to require a delta time
+    // value, because they frequently use it for adjusting things in
+    // a frame-rate-independent way, so we grab this here so that we
+    // can pass it into the upcoming function calls
+    var dt = event.Dt;
+    
+    // every frame, we need to at least try to have a target
+    this.AttemptAcquireTarget(dt);
+    // then we need to check to see if the state transition is ready
+    this.TransitionCheck();
+    
+    // finally, we do the appropriate behavior update,
+    // depending on the current state
+    if      (this.State == AiState.Patrol)
+      this.UpdatePatrol(dt);
+    else // (this.State == AiState.Attack)
+      this.UpdateAttack(dt);
+  }
+  
+  
+  function TransitionCheck()
+  {
+    // the state we're already in will determine how to proceed
+    
+    // PATROL -------------------------------
+    // 
+    // In Patrol, the only way to go is into Attack. The way you
+    // get there is by:
+    // - having a target AND
+    // - being close enough to it AND
+    // - having direct line of sight to it
+    // 
+    if      (this.State == AiState.Patrol)
+    {
+      // if we have no target, then we should definitely
+      // stay in Patrol
+      if (this.Target == null)
+        return;
+      
+      // next, we need to see if we're close enough
+      
+      // get the difference vector between this object and the target
+      var aiPosition = this.Transform.WorldTranslation;
+      var targetPosition = this.Target.Transform.WorldTranslation;
+      var difference = targetPosition - aiPosition;
+      // get the squares of the distance and the threshold for
+      // entering the Attack state
+      var distanceSquared = Math.LengthSq(difference);
+      var thresholdSquared = this.TargetThresholdDistanceToAttack *
+        this.TargetThresholdDistanceToAttack;
+      
+      // if the square of the distance is less than the square of the threshold,
+      // then the distance is less than the threshold
+      if (distanceSquared < thresholdSquared)
+      {
+        // if we've come this far, then we need to check line of sight. this
+        // could be improved with additional ray casts or something. further
+        // research might yield an even better way of doing it
+        
+        // the ray starts at the current position and goes in the direction of the target
+        var ray = Ray();
+        ray.Start = aiPosition;
+        ray.Direction = Math.Normalize(difference);
+        
+        // perform the ray cast
+        var result = this.Space.PhysicsSpace.CastRayFirst(ray, this.CastFilter);
+        
+        // if we hit anything and it is our target, then we have line of sight
+        if (result.ObjectHit == this.Target)
+        {
+          // it's go time, baby
+          this.ExitPatrol();
+          this.EnterAttack();
+        }
+      }
+    }
+    // ATTACK -------------------------------
+    // 
+    // In Attack, the only way to go is into Patrol. The way you
+    // get there is by:
+    // - having NO target, OR
+    // - getting too far away from the target, OR
+    // - losing line of sight to the target
+    // 
+    else // (this.State == AiState.Attack)
+    {
+      // first, if we have no target,
+      // then we should switch back to Patrol right away
+      if (this.Target == null)
+      {
+        // back to patrol
+        this.ExitAttack();
+        this.EnterPatrol();
+        
+        // return early because we know we're done here
+        return;
+      }
+      
+      // next, we need to see if we're too far away
+      
+      // get the difference vector between this object and the target
+      var aiPosition = this.Transform.WorldTranslation;
+      var targetPosition = this.Target.Transform.WorldTranslation;
+      var difference = targetPosition - aiPosition;
+      // get the squares of the distance and the threshold for
+      // entering the Patrol state
+      var distanceSquared = Math.LengthSq(difference);
+      var thresholdSquared = this.TargetThresholdDistanceFromAttack *
+        this.TargetThresholdDistanceFromAttack;
+      
+      // if the square of the distance is greater than the square of the threshold,
+      // then the distance is greater than the threshold
+      if (distanceSquared > thresholdSquared)
+      {
+        // back to patrol
+        this.ExitAttack();
+        this.EnterPatrol();
+        
+        // return early because we know we're done here
+        return;
+      }
+      
+      // finally, we need to check line of sight
+      
+      // the ray starts at the current position and goes in the direction of the target
+      var ray = Ray();
+      ray.Start = aiPosition;
+      ray.Direction = Math.Normalize(difference);
+      
+      // perform the ray cast
+      var result = this.Space.PhysicsSpace.CastRayFirst(ray, this.CastFilter);
+      
+      // if we didn't hit anything, or we hit something besides our target,
+      // then line of sight is broken
+      if (result.ObjectHit != this.Target)
+      {
+        // back to patrol
+        this.ExitAttack();
+        this.EnterPatrol();
+      }
+    }
+  }
+  
+  
+  function AttemptAcquireTarget(dt : Real)
+  {
+    // if we already have a target, we're good
+    if (this.Target != null)
+      return;
+    
+    // if the timer is done, then we can proceed
+    if (this.TargetAcquisitionTimer >= this.TargetAcquisitionCheckDelay)
+    {
+      // reset the timer
+      this.TargetAcquisitionTimer = 0;
+      // get the target
+      this.AcquireTarget();
+    }
+    // otherwise, increment the timer
+    else
+    {
+      this.TargetAcquisitionTimer += dt;
+    }
+  }
+  
+  
+  function AcquireTarget()
+  {
+    // run through all of the objects that exist right now
+    foreach (var object in this.Space.AllObjects)
+    {
+      // if we find one that has the PlayerInput component,
+      // that's our target. note that this could be changed --
+      // you could make, for instance, an AiTarget component
+      // that you use to tag things that should be considered
+      // targets. in that case, this should instead get all of
+      // the objects with that component and use some algorithm
+      // to decide which one is the actual target. or, this
+      // component could be modified to have an array of valid
+      // targets, and all of its distance and line-of-sight
+      // checks would look at all of them instead of just one.
+      // there are a few unanswered questions there, but this
+      // works for now
+      if (object.PlayerInput != null)
+      {
+        this.Target = object;
+        // return early after finding the first one
+        return;
+      }
+    }
+  }
+  
+  
+  function EnterPatrol()
+  {
+    // switch the AI state to Patrol
+    this.State = AiState.Patrol;
+    
+    // say something funny
+    Console.WriteLine("Welp, back to the ol' patrol, I guess");
+    
+    // not much else to do for now, but this could include
+    // spawning an object or playing a sound effect for feedback,
+    // or dispatching an event
+  }
+  
+  
+  function UpdatePatrol(dt : Real)
+  {
+    // UPDATING PATROL ---------------------
+    // 
+    // In the patrol state, the AI entity should just move
+    // from one AI node to the next
+    
+    // compare the distance to the waypoint threshold the same way
+    // that this comparison is made for the target distance checks
+    var aiPosition = this.Transform.WorldTranslation;
+    var currentWaypoint = this.Waypoints[this.WaypointIndex];
+    var difference = currentWaypoint - aiPosition;
+    var distanceSquared = Math.LengthSq(difference);
+    var thresholdSquared = this.WaypointDistanceThreshold *
+      this.WaypointDistanceThreshold;
+    
+    // if we got close enough to the waypoint...
+    if (distanceSquared < thresholdSquared)
+    {
+      // then it's time to move to the next one
+      ++this.WaypointIndex;
+      
+      // if we were already on the last one, then we go
+      // back to the first one.
+      // POTENTIAL IMPROVEMENT:
+      //   have some kind of enum or something that would
+      //   define what you do when you get to the last waypoint:
+      //   go back to the first one? go backwards through them?
+      //   hold still forever? destroy yourself?
+      if (this.WaypointIndex >= this.Waypoints.Count)
+        this.WaypointIndex = 0;
+      
+      // update the variables that were declared above so
+      // that they're now updated with the info about the
+      // new current waypoint
+      currentWaypoint = this.Waypoints[this.WaypointIndex];
+      difference = currentWaypoint - aiPosition;
+    }
+    
+    // get the desired movement direction by rotating the current
+    // facing direction toward the difference vector to the next
+    // waypoint at a max angle of our TurnSpeed times dt
+    var forward = this.Orientation.WorldForward;
+    var movementDirection = Math.RotateTowards(forward, difference,
+      Math.ToRadians(this.TurnSpeed) * dt);
+    
+    // actually move the character, and let the CharacterController
+    // handle rotating to face the movement direction
+    this.CharacterController.Move(movementDirection);
+  }
+  
+  
+  function ExitPatrol()
+  {
+    // say something funny
+    Console.WriteLine("Hold up a sec --");
+    
+    // it's less likely that there would be much to do when
+    // exiting a class than when entering one, but if you did,
+    // say, create something on Enter that was supposed to exist
+    // only while we were in this state, then this would be the
+    // place to destroy it
+  }
+  
+  
+  function EnterAttack()
+  {
+    // switch the AI state to Patrol
+    this.State = AiState.Attack;
+    
+    // say something funny
+    Console.WriteLine("There he is! Blast him!!");
+    
+    // see EnterPatrol's comments for what else could be done here
+  }
+  
+  
+  function UpdateAttack(dt : Real)
+  {
+    // UPDATING ATTACK ---------------------
+    // 
+    // In the attack state, for now, we just face the target
+    // and attack it. we also need to make sure we call the
+    // CharacterController's Move function with a zero vector,
+    // because we shouldn't be moving while in this state.
+    // potential changes could include moving in some manner,
+    // say, to maintain a desired distance from the target
+    
+    // first, face the target
+    this.FaceTarget();
+    
+    // then, make sure we're not moving
+    this.CharacterController.Move(Real3.Zero);
+    
+    // finally, attempt to attack
+    this.AttemptAttack(dt);
+  }
+  
+  
+  function FaceTarget()
+  {
+    // get the direction toward the target
+    var aiPosition = this.Transform.WorldTranslation;
+    var targetPosition = this.Target.Transform.WorldTranslation;
+    var difference = targetPosition - aiPosition;
+    var direction = Math.Normalize(difference);
+    
+    // look at it
+    // 
+    // LOOK AT IT
+    this.Orientation.LookAtDirection(direction);
+  }
+  
+  
+  function AttemptAttack(dt : Real)
+  {
+    // if the cooldown is ready, then we're good.
+    // otherwise, increment the timer
+    if (this.AttackTimer >= this.AttackDelay)
+      this.Attack();
+    else
+      this.AttackTimer += dt;
+  }
+  
+  
+  function Attack()
+  {
+    // call the CharacterController's Attack function with the current
+    // facing vector. note that if this component is modified to allow
+    // movement during the Attack state, then the WorldForward will no
+    // longer be the correct direction to fire in
+    this.CharacterController.Attack(this.Orientation.WorldForward);
+    // reset the attack timer after every shot
+    this.ResetAttackTimer();
+  }
+  
+  
+  function ResetAttackTimer()
+  {
+    // set the timer to zero, and recalculate the new delay duration
+    this.AttackTimer = 0;
+    this.AttackDelay = this.RNG.Variance(this.AttackDelayBase, this.AttackDelayVariance);
+    // POTENTIAL IMPROVEMENT:
+    //   maybe you could make it so that the enemy has a short delay and a long delay.
+    //   it fires in a burst of, say, three shots, with the short delay between them.
+    //   then, it waits the long delay before the next burst. the short delay would be
+    //   constant, but the long delay would have the calculated variance used here
+  }
+  
+  
+  function ExitAttack()
+  {
+    // say something funny
+    Console.WriteLine("...Nuts, I lost him");
+    
+    // see ExitPatrol's comments for what else could be done here
+  }
+}
+
+
+enum AiState
+{
+  Patrol,
+  Attack,
+}

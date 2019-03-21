@@ -1,0 +1,46 @@
+// basic movement and attacking interface for human control of the CharacterController
+class PlayerInput : ZilchComponent
+{
+  [Dependency]
+  var Orientation : Orientation;                  // needed to know which way to attack
+  [Dependency]
+  var CharacterController : CharacterController;  // needed for movement and attacking
+  
+  
+  function Initialize(init : CogInitializer)
+  {
+    // Event Connections -----
+    Zero.Connect(this.Space, Events.LogicUpdate, this.OnLogicUpdate); // movement occurs every frame
+  }
+  
+  
+  function OnLogicUpdate(event : UpdateEvent)
+  {
+    // the direction variable starts out at zero
+    var direction = Real3.Zero;
+    
+    // add on the appropriate values for each movement key
+    if (Zero.Keyboard.KeyIsDown(Keys.Right))
+      direction.X += 1;
+    if (Zero.Keyboard.KeyIsDown(Keys.Left))
+      direction.X -= 1;
+    if (Zero.Keyboard.KeyIsDown(Keys.Up))
+      direction.Y += 1;
+    if (Zero.Keyboard.KeyIsDown(Keys.Down))
+      direction.Y -= 1;
+    
+    // normalize it so you don't have fast diagonals
+    // note: Math.Normalize returns a zero vector
+    // when given a zero vector, so it's safe
+    direction = Math.Normalize(direction);
+    
+    // move the character however much is asked for in whatever direction
+    this.CharacterController.Move(direction);
+    
+    // if the attack key is pressed, attack in the current facing direction
+    if (Zero.Keyboard.KeyIsPressed(Keys.Z))
+      this.CharacterController.Attack(this.Orientation.WorldForward);
+    
+    // note that all these keys should probably be properties, but i was lazy
+  }
+}

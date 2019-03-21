@@ -1,0 +1,8 @@
+[Version:1]
+ContentLibrary 
+{
+	var Name = "AiThing"
+	var LibraryId = 0x5cf2cbf858c29716
+	var SourceControlType = ""
+	var ReadOnly = false
+}

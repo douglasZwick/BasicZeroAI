@@ -1,0 +1,72 @@
+// abstract character movement and attacking, compatible with human-
+// or ai-controlled characters (provided they should move in about the same way)
+// 
+// NOTE: this controller is downright bad, but it works well enough to
+// demonstrate what i'm on about. in a future version, i will update it
+// with the SweptController, which is MUCH much nicer
+class CharacterController : ZilchComponent
+{
+  [Dependency]
+  var Transform : Transform;      // needed for ray casts / distance checks
+  [Dependency]
+  var Orientation : Orientation;  // needed for turning and facing
+  [Dependency]
+  var RigidBody : RigidBody;      // needed for setting velocity
+  
+  
+  [Property]
+  // How fast should I move?
+  var MovementSpeed : Real = 10;
+  
+  [Property]
+  // How fast should my bullets fly?
+  var BulletSpeed : Real = 20;
+  
+  [Property]
+  // Where, in local space, should my bullets come from?
+  var BulletLocalOffset : Real3 = Real3.Zero;
+  
+  [Property]
+  // The archetype to spawn for attacks
+  var BulletArchetype : Archetype = Archetype.HeroBullet;
+  
+  [Property]
+  // How much error (in degrees) should be applied to the firing angle of each attack?
+  var AngleVariance : Real = 0;
+  
+  var RNG : Random = Random();  // good ol' random number generator
+  
+  
+  // normally this is needed for event connections, but this
+  // component doesn't really need those
+  // function Initialize(init : CogInitializer) {}
+  
+  
+  function Move(direction : Real3)
+  {
+    // velocity is speed times direction, BOOIIIII
+    this.RigidBody.Velocity = direction * this.MovementSpeed;
+    
+    // also face the given direction if it's non-zero
+    if (direction != Real3.Zero)
+      this.Orientation.LookAtDirection(direction);
+  }
+  
+  
+  function Attack(direction : Real3)
+  {
+    // generate a random angle between -AngleVariance and AngleVariance
+    // (converted to radians, of course) and rotate the given direction
+    // by that much to produce the actual direction to attack in
+    var randomAngle = this.RNG.Variance(0, Math.ToRadians(this.AngleVariance));
+    direction = Math.RotateVector(direction, Real3.ZAxis, randomAngle);
+    
+    // spawn the bullet and give it its velocity
+    var bulletPosition = this.Transform.TransformPoint(this.BulletLocalOffset);
+    var bulletVelocity = direction * this.BulletSpeed;
+    var bullet = this.Space.CreateAtPosition(this.BulletArchetype, bulletPosition);
+    bullet.RigidBody.Velocity = bulletVelocity;
+    // and also rotate it to point the right way
+    bullet.Orientation.LookAtDirection(direction);
+  }
+}

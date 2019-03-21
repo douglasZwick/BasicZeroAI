@@ -1,0 +1,9 @@
+[Version:1]
+TextContent 
+{
+	ZilchScriptBuilder 
+	{
+		var Name = "CharacterController"
+		var ResourceId = 0x5cf2cc8e160c4176
+	}
+}

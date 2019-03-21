@@ -1,0 +1,71 @@
+[Version:1]
+CollisionTable 
+{
+	var RegisteredGroups = Array
+	{
+		"5cf2e697cc232eef:Hero"
+		"4e740859314e5515:DefaultGroup"
+		"5cf2e69fce601a7d:Enemy"
+		"5cf2e6cdfe3dd8fa:HeroBullet"
+		"5cf2e68ef175eab9:EnemyBullet"
+	}
+	var CollisionFilters = Array
+	{
+		Object
+		{
+			var TypeA = "5cf2e69fce601a7d:Enemy"
+			var TypeB = "5cf2e68ef175eab9:EnemyBullet"
+			var SkipResolution = false
+			var SkipDetectingCollision = true
+			var StartEvent = false
+			var EndEvent = false
+			var PersistedEvent = false
+			var PreSolveEvent = false
+		}
+		Object
+		{
+			var TypeA = "5cf2e68ef175eab9:EnemyBullet"
+			var TypeB = "5cf2e6cdfe3dd8fa:HeroBullet"
+			var SkipResolution = false
+			var SkipDetectingCollision = true
+			var StartEvent = false
+			var EndEvent = false
+			var PersistedEvent = false
+			var PreSolveEvent = false
+		}
+		Object
+		{
+			var TypeA = "5cf2e68ef175eab9:EnemyBullet"
+			var TypeB = "5cf2e68ef175eab9:EnemyBullet"
+			var SkipResolution = false
+			var SkipDetectingCollision = true
+			var StartEvent = false
+			var EndEvent = false
+			var PersistedEvent = false
+			var PreSolveEvent = false
+		}
+		Object
+		{
+			var TypeA = "5cf2e697cc232eef:Hero"
+			var TypeB = "5cf2e6cdfe3dd8fa:HeroBullet"
+			var SkipResolution = false
+			var SkipDetectingCollision = true
+			var StartEvent = false
+			var EndEvent = false
+			var PersistedEvent = false
+			var PreSolveEvent = false
+		}
+		Object
+		{
+			var TypeA = "5cf2e6cdfe3dd8fa:HeroBullet"
+			var TypeB = "5cf2e6cdfe3dd8fa:HeroBullet"
+			var SkipResolution = false
+			var SkipDetectingCollision = true
+			var StartEvent = false
+			var EndEvent = false
+			var PersistedEvent = false
+			var PreSolveEvent = false
+		}
+	}
+	var AutoRegister = true
+}
